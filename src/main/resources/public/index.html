@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Contribution Tracker</title>
+<style>
+  body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+  th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+  progress { width: 100px; }
+  #msg { color: #b00020; min-height: 1.2em; }
+  input, select, button { padding: 4px; margin: 2px; }
+</style>
+</head>
+<body>
+  <h1>Group Contribution Tracker</h1>
+  <p>Acting as: <select id="actor" onchange="refresh()"></select> <b id="role"></b></p>
+  <p id="msg"></p>
+
+  <h2>Assign a task</h2>
+  <input id="title" placeholder="Task title">
+  <select id="assignee"></select>
+  <button onclick="assign()">Assign</button>
+
+  <h2>Tasks</h2>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Task</th><th>Responsible</th><th>Progress</th><th>Status</th><th>Update %</th></tr>
+    </thead>
+    <tbody id="tasks"></tbody>
+  </table>
+
+  <h2>Report (average progress per member)</h2>
+  <ul id="report"></ul>
+
+<script>
+  const $ = id => document.getElementById(id);
+  let users = [];
+
+  async function api(url, body) {
+    const res = await fetch(url, body ? { method: 'POST', body: new URLSearchParams(body) } : {});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  }
+
+  function showError(e) {
+    $('msg').textContent = e.message;
+  }
+
+  async function init() {
+    users = await api('/api/users');
+    users.forEach(u => {
+      $('actor').add(new Option(u.name, u.name));
+      if (u.role !== 'LECTURER') $('assignee').add(new Option(u.name, u.name));
+    });
+    refresh();
+  }
+
+  async function refresh() {
+    $('msg').textContent = '';
+    const me = users.find(u => u.name === $('actor').value);
+    $('role').textContent = '(' + me.role + ')';
+
+    const tasks = await api('/api/tasks');
+    $('tasks').innerHTML = tasks.map(t => `
+      <tr>
+        <td>${t.id}</td>
+        <td>${t.title}</td>
+        <td>${t.assignee.name}</td>
+        <td><progress value="${t.progress}" max="100"></progress> ${t.progress}%</td>
+        <td>${t.status}</td>
+        <td><input id="p${t.id}" type="number" min="0" max="100" style="width:60px">
+            <button onclick="update(${t.id})">Save</button></td>
+      </tr>`).join('');
+
+    const report = await api('/api/report');
+    $('report').innerHTML = Object.entries(report)
+      .map(([name, avg]) => `<li>${name}: ${avg.toFixed(0)}%</li>`).join('');
+  }
+
+  async function assign() {
+    try {
+      await api('/api/tasks', {
+        actor: $('actor').value, title: $('title').value, assignee: $('assignee').value });
+      $('title').value = '';
+      refresh();
+    } catch (e) { showError(e); }
+  }
+
+  async function update(id) {
+    try {
+      await api(`/api/tasks/${id}/progress`, {
+        actor: $('actor').value, progress: $('p' + id).value });
+      refresh();
+    } catch (e) { showError(e); }
+  }
+
+  init();
+</script>
+</body>
+</html>
