@@ -1,5 +1,7 @@
 package tracker.exception;
 
-public class UnauthorizedActionException {
-    
+public class UnauthorizedActionException extends TrackerException {
+    public UnauthorizedActionException(String message) {
+        super(message, 403);
+    }
 }
