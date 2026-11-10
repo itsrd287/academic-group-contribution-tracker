@@ -31,12 +31,19 @@ public class App {
             ctx.json(service.updateProgress(ctx.formParam("actor"), id, progress));
         });
 
-        // One handler for all our custom exceptions (polymorphism again)
+        // Delete a task (group leader only)
+        app.delete("/api/tasks/{id}", ctx -> {
+            int id = Integer.parseInt(ctx.pathParam("id"));
+            service.deleteTask(ctx.queryParam("actor"), id);
+            ctx.status(204);
+        });
+
+        // Handle custom exceptions
         app.exception(TrackerException.class, (e, ctx) ->
             ctx.status(e.getStatus()).json(Map.of("error", e.getMessage())));
 
         app.exception(NumberFormatException.class, (e, ctx) ->
-            ctx.status(400).json(Map.of("error", "Progress must be a whole number")));
+            ctx.status(400).json(Map.of("error", "ID and progress must be whole numbers")));
 
         app.start(7070);
     }

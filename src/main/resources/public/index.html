@@ -4,43 +4,116 @@
 <meta charset="UTF-8">
 <title>Contribution Tracker</title>
 <style>
-  body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
-  table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-  th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
-  progress { width: 100px; }
-  #msg { color: #b00020; min-height: 1.2em; }
-  input, select, button { padding: 4px; margin: 2px; }
+  body {
+    font-family: sans-serif;
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+  }
+
+  th, td {
+    border: 1px solid #ccc;
+    padding: 6px;
+    text-align: left;
+  }
+
+  progress {
+    width: 100px;
+  }
+
+  #msg {
+    color: #b00020;
+    min-height: 1.2em;
+  }
+
+  input, select, button {
+    padding: 4px;
+    margin: 2px;
+  }
 </style>
 </head>
+
 <body>
-  <h1>Group Contribution Tracker</h1>
-  <p>Acting as: <select id="actor" onchange="refresh()"></select> <b id="role"></b></p>
-  <p id="msg"></p>
 
-  <h2>Assign a task</h2>
-  <input id="title" placeholder="Task title">
-  <select id="assignee"></select>
-  <button onclick="assign()">Assign</button>
+<h1>Group Contribution Tracker</h1>
 
-  <h2>Tasks</h2>
-  <table>
-    <thead>
-      <tr><th>ID</th><th>Task</th><th>Responsible</th><th>Progress</th><th>Status</th><th>Update %</th></tr>
-    </thead>
-    <tbody id="tasks"></tbody>
-  </table>
+<p>
+  Acting as:
+  <select id="actor" onchange="refresh()"></select>
+  <b id="role"></b>
+</p>
 
-  <h2>Report (average progress per member)</h2>
-  <ul id="report"></ul>
+<p id="msg"></p>
+
+<h2>Assign a task</h2>
+
+<input id="title" placeholder="Task title">
+<select id="assignee"></select>
+<button onclick="assign()">Assign</button>
+
+<h2>Tasks</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Task</th>
+      <th>Responsible</th>
+      <th>Progress</th>
+      <th>Status</th>
+      <th>Update %</th>
+      <th>Delete</th>
+    </tr>
+  </thead>
+
+  <tbody id="tasks"></tbody>
+</table>
+
+<h2>Report (average progress per member)</h2>
+<ul id="report"></ul>
 
 <script>
   const $ = id => document.getElementById(id);
   let users = [];
 
+  // API function handles POST, DELETE and normal GET requests
   async function api(url, body) {
-    const res = await fetch(url, body ? { method: 'POST', body: new URLSearchParams(body) } : {});
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
+    let options = {};
+
+    if (body && body.method === 'DELETE') {
+      options = {
+        method: 'DELETE'
+      };
+    } else if (body) {
+      options = {
+        method: 'POST',
+        body: new URLSearchParams(body)
+      };
+    }
+
+    const res = await fetch(url, options);
+
+    if (res.status === 204) return null;
+
+    const responseText = await res.text();
+    let data;
+
+    try {
+      data = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      throw new Error(responseText || 'Invalid server response');
+    }
+
+    if (!res.ok) {
+      throw new Error(data?.error || 'Request failed');
+    }
+
     return data;
   }
 
@@ -48,55 +121,139 @@
     $('msg').textContent = e.message;
   }
 
+  // Load users when the website opens
   async function init() {
-    users = await api('/api/users');
-    users.forEach(u => {
-      $('actor').add(new Option(u.name, u.name));
-      if (u.role !== 'LECTURER') $('assignee').add(new Option(u.name, u.name));
-    });
-    refresh();
+    try {
+      users = await api('/api/users');
+
+      users.forEach(u => {
+        $('actor').add(new Option(u.name, u.name));
+
+        if (u.role !== 'LECTURER') {
+          $('assignee').add(new Option(u.name, u.name));
+        }
+      });
+
+      refresh();
+
+    } catch (e) {
+      showError(e);
+    }
   }
 
+  // Display tasks and reports
   async function refresh() {
-    $('msg').textContent = '';
-    const me = users.find(u => u.name === $('actor').value);
-    $('role').textContent = '(' + me.role + ')';
+    try {
+      $('msg').textContent = '';
 
-    const tasks = await api('/api/tasks');
-    $('tasks').innerHTML = tasks.map(t => `
-      <tr>
-        <td>${t.id}</td>
-        <td>${t.title}</td>
-        <td>${t.assignee.name}</td>
-        <td><progress value="${t.progress}" max="100"></progress> ${t.progress}%</td>
-        <td>${t.status}</td>
-        <td><input id="p${t.id}" type="number" min="0" max="100" style="width:60px">
-            <button onclick="update(${t.id})">Save</button></td>
-      </tr>`).join('');
+      const me = users.find(
+        u => u.name === $('actor').value
+      );
 
-    const report = await api('/api/report');
-    $('report').innerHTML = Object.entries(report)
-      .map(([name, avg]) => `<li>${name}: ${avg.toFixed(0)}%</li>`).join('');
+      if (!me) return;
+
+      $('role').textContent = '(' + me.role + ')';
+
+      const tasks = await api('/api/tasks');
+
+      $('tasks').innerHTML = tasks.map(t => `
+        <tr>
+          <td>${t.id}</td>
+          <td>${t.title}</td>
+          <td>${t.assignee.name}</td>
+          <td>
+            <progress value="${t.progress}" max="100"></progress>
+            ${t.progress}%
+          </td>
+          <td>${t.status}</td>
+          <td>
+            <input
+              id="p${t.id}"
+              type="number"
+              min="0"
+              max="100"
+              style="width:60px"
+            >
+            <button onclick="update(${t.id})">Save</button>
+          </td>
+          <td>
+            ${me.role === 'LEADER'
+              ? `<button onclick="deleteTask(${t.id})">Delete</button>`
+              : 'Not allowed'}
+          </td>
+        </tr>
+      `).join('');
+
+      const report = await api('/api/report');
+
+      $('report').innerHTML = Object.entries(report)
+        .map(([name, avg]) =>
+          `<li>${name}: ${avg.toFixed(0)}%</li>`
+        ).join('');
+
+    } catch (e) {
+      showError(e);
+    }
   }
 
+  // Assign a task
   async function assign() {
     try {
       await api('/api/tasks', {
-        actor: $('actor').value, title: $('title').value, assignee: $('assignee').value });
+        actor: $('actor').value,
+        title: $('title').value,
+        assignee: $('assignee').value
+      });
+
       $('title').value = '';
-      refresh();
-    } catch (e) { showError(e); }
+      await refresh();
+
+    } catch (e) {
+      showError(e);
+    }
   }
 
+  // Update task progress
   async function update(id) {
     try {
       await api(`/api/tasks/${id}/progress`, {
-        actor: $('actor').value, progress: $('p' + id).value });
-      refresh();
-    } catch (e) { showError(e); }
+        actor: $('actor').value,
+        progress: $('p' + id).value
+      });
+
+      await refresh();
+
+    } catch (e) {
+      showError(e);
+    }
+  }
+
+  // Delete a task (group leader only)
+  async function deleteTask(id) {
+    try {
+      const confirmed = confirm(
+        'Are you sure you want to delete this task?'
+      );
+
+      if (!confirmed) return;
+
+      const actor = encodeURIComponent(
+        $('actor').value
+      );
+
+      await api(`/api/tasks/${id}?actor=${actor}`, {
+        method: 'DELETE'
+      });
+
+      await refresh();
+
+    } catch (e) {
+      showError(e);
+    }
   }
 
   init();
 </script>
+
 </body>
 </html>
